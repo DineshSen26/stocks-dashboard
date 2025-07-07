@@ -35,6 +35,16 @@ def fetch_stock_data():
         try:
             stock = yf.Ticker(symbol)
             info = stock.info
+            financials = stock.financials
+            cashflow = stock.cashflow
+
+            # Extracting latest available Net Income and CFO
+            net_income = financials.loc["Net Income"].iloc[0] if "Net Income" in financials.index else None
+            cfo = cashflow.loc["Total Cash From Operating Activities"].iloc[0] if "Total Cash From Operating Activities" in cashflow.index else None
+
+            earnings_quality = None
+            if net_income is not None and cfo is not None:
+                earnings_quality = cfo >= net_income
 
             roe = info.get("returnOnEquity")
             pe_ratio = info.get("trailingPE")
@@ -63,7 +73,9 @@ def fetch_stock_data():
                 "D/E": de_ratio,
                 "Dividend Yield (%)": dividend_yield * 100 if dividend_yield else None,
                 "Market Cap (₹ Cr)": market_cap / 1e7 if market_cap else None,
-                "Price (₹)": current_price
+                "Price (₹)": current_price,
+                "Earnings Quality (CFO ≥ Net Profit)": "✔" if earnings_quality else "✖" if earnings_quality is not None else "N/A",
+                "Earnings Quality Score": 1 if earnings_quality else 0 if earnings_quality is not None else None
             })
 
         except Exception as e:
@@ -87,15 +99,22 @@ for col in ["PEG", "P/E", "P/B", "D/E"]:
 for col in ["ROE - CoE (%)", "Dividend Yield (%)"]:
     scored_df[f"{col}_score"] = scored_df[col].rank(ascending=False)
 
-score_columns = [col for col in scored_df.columns if col.endswith("_score")]
-scored_df["Total Score"] = scored_df[score_columns].sum(axis=1)
+# Earnings Quality Score (binary)
+scored_df["Earnings Quality Score_score"] = scored_df["Earnings Quality Score"]
+
+# Total Score (optionally give Earnings Quality extra weight)
+scored_df["Total Score"] = (
+    scored_df[[col for col in scored_df.columns if col.endswith("_score")]].sum(axis=1) +
+    scored_df["Earnings Quality Score_score"]  # Adjust multiplier here if needed
+)
+
 scored_df["Rank"] = scored_df["Total Score"].rank(method="min").astype(int)
 scored_df = scored_df.sort_values("Rank")
 
 # Display table
 display_cols = [
     "Rank", "Company", "P/E", "Industry P/E", "PEG", "ROE (%)", "CoE (%)", "ROE - CoE (%)",
-    "P/B", "D/E", "Dividend Yield (%)", "Market Cap (₹ Cr)", "Price (₹)"
+    "P/B", "D/E", "Dividend Yield (%)", "Earnings Quality (CFO ≥ Net Profit)", "Market Cap (₹ Cr)", "Price (₹)"
 ]
 
 st.dataframe(scored_df[display_cols].set_index("Rank"), use_container_width=True)
@@ -109,7 +128,8 @@ explanation = pd.DataFrame([
     {"Factor": "P/B", "Ideal": "Low", "Explanation": "Lower P/B indicates potential undervaluation."},
     {"Factor": "D/E", "Ideal": "< 1", "Explanation": "Lower D/E means lower financial risk."},
     {"Factor": "ROE - CoE (%)", "Ideal": "> 0", "Explanation": "ROE above CoE indicates value creation."},
-    {"Factor": "Dividend Yield (%)", "Ideal": "> 1%", "Explanation": "Higher yield is attractive for income investors."}
+    {"Factor": "Dividend Yield (%)", "Ideal": "> 1%", "Explanation": "Higher yield is attractive for income investors."},
+    {"Factor": "Earnings Quality (CFO ≥ Net Profit)", "Ideal": "✔", "Explanation": "Good earnings quality when operating cash ≥ reported net income. Scoring: 1 if true, 0 otherwise."}
 ])
 
 st.dataframe(explanation, use_container_width=True)
@@ -135,6 +155,11 @@ def generate_summary(row):
 
     if row['Dividend Yield (%)'] is not None and row['Dividend Yield (%)'] > 1:
         positives.append("✔ Healthy Dividend Yield")
+
+    if row["Earnings Quality (CFO ≥ Net Profit)"] == "✔":
+        positives.append("✔ Strong Earnings Quality (CFO ≥ Net Profit)")
+    elif row["Earnings Quality (CFO ≥ Net Profit)"] == "✖":
+        cautions.append("⚠ Weak Earnings Quality (CFO < Net Profit)")
 
     return positives, cautions
 
