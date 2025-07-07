@@ -5,7 +5,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 
-# Titleofthe message
+# Title
 st.title("📊 Ranked Stock Analysis Matrix")
 
 # Ticker list
@@ -38,9 +38,29 @@ def fetch_stock_data():
             financials = stock.financials
             cashflow = stock.cashflow
 
-            # Extracting latest available Net Income and CFO
-            net_income = financials.loc["Net Income"].iloc[0] if "Net Income" in financials.index else None
-            cfo = cashflow.loc["Total Cash From Operating Activities"].iloc[0] if "Total Cash From Operating Activities" in cashflow.index else None
+            # Robust extraction of Net Income and CFO
+            net_income = None
+            cfo = None
+
+            try:
+                for label in financials.index:
+                    if any(key in label.lower() for key in ["net income", "netincome", "net profit"]):
+                        ni_series = financials.loc[label].dropna()
+                        if not ni_series.empty:
+                            net_income = ni_series.iloc[0]
+                            break
+            except Exception as e:
+                st.warning(f"Could not extract Net Income for {name}: {e}")
+
+            try:
+                for label in cashflow.index:
+                    if any(key in label.lower() for key in ["total cash from operating activities", "operating cash flow", "net cash provided by operating activities"]):
+                        cfo_series = cashflow.loc[label].dropna()
+                        if not cfo_series.empty:
+                            cfo = cfo_series.iloc[0]
+                            break
+            except Exception as e:
+                st.warning(f"Could not extract CFO for {name}: {e}")
 
             earnings_quality = None
             if net_income is not None and cfo is not None:
@@ -102,12 +122,13 @@ for col in ["ROE - CoE (%)", "Dividend Yield (%)"]:
 # Earnings Quality Score (binary)
 scored_df["Earnings Quality Score_score"] = scored_df["Earnings Quality Score"]
 
-# Total Score (optionally give Earnings Quality extra weight)
+# Total Score
 scored_df["Total Score"] = (
-    scored_df[[col for col in scored_df.columns if col.endswith("_score")]].sum(axis=1) +
-    scored_df["Earnings Quality Score_score"]  # Adjust multiplier here if needed
+    scored_df[[col for col in scored_df.columns if col.endswith("_score")]].sum(axis=1)
 )
 
+# Drop rows with NaN Total Score before ranking
+scored_df = scored_df[scored_df["Total Score"].notna()]
 scored_df["Rank"] = scored_df["Total Score"].rank(method="min").astype(int)
 scored_df = scored_df.sort_values("Rank")
 
