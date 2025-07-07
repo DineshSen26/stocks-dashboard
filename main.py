@@ -5,7 +5,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Stock Analysis Dashboard", layout="wide")
 
-# Title
+# Titleofthe message
 st.title("📊 Ranked Stock Analysis Matrix")
 
 # Ticker list
