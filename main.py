@@ -127,9 +127,11 @@ scored_df["Total Score"] = (
     scored_df[[col for col in scored_df.columns if col.endswith("_score")]].sum(axis=1)
 )
 
+
 # Drop rows with NaN Total Score before ranking
-scored_df = scored_df[scored_df["Total Score"].notna()]
-scored_df["Rank"] = scored_df["Total Score"].rank(method="min").astype(int)
+scored_df = scored_df[scored_df["Total Score"].notna()].copy()
+scored_df["Rank"] = scored_df["Total Score"].rank(method="min").astype("Int64")
+
 scored_df = scored_df.sort_values("Rank")
 
 # Display table
